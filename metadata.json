@@ -1,0 +1,7 @@
+{
+  "name": "Pesquisa de Cidadania Fiscal - UNITINS",
+  "description": "Formulário de pesquisa extensionista sobre cidadania fiscal da UNITINS / UAB Polo Pedro Afonso com autenticação Google e painel administrativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
