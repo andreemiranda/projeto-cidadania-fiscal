@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     if (isConfigured && auth) {
+      setLoading(true);
       try {
         await signInWithPopup(auth, googleProvider);
       } catch (err: unknown) {
@@ -75,6 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const redObj = redirectErr as { code?: string };
           console.error('[Firebase Auth] Redirect login error:', redObj?.code || redirectErr);
           alert('Não foi possível concluir o login com o Google.');
+          setLoading(false);
         }
       }
     } else {

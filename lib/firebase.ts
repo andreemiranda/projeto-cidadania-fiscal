@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore, enableIndexedDbPersistence } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -33,6 +33,18 @@ if (
       app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
       auth = getAuth(app);
       db = getFirestore(app);
+      
+      // Enable robust offline persistence for instant form submissions
+      if (typeof window !== 'undefined') {
+        enableIndexedDbPersistence(db).catch((err) => {
+          if (err.code == 'failed-precondition') {
+            console.warn('Multiple tabs open, persistence disabled in this tab.');
+          } else if (err.code == 'unimplemented') {
+            console.warn('Browser does not support Firestore persistence.');
+          }
+        });
+      }
+
       isConfigured = true;
 
       // Initialize Firebase Analytics safely on the browser client if measurementId is provided

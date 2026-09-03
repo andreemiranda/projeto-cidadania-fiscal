@@ -151,16 +151,22 @@ export async function submitSurveyResponse(response: SurveyResponse): Promise<vo
     localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(updated));
   }
 
-  // Await Firestore persistence to ensure it doesn't get cancelled
+  // Await Firestore persistence with a timeout to guarantee fast UI response
   if (isConfigured && db) {
     try {
-      await setDoc(doc(db, 'respostas', response.id), {
+      const dbPromise = setDoc(doc(db, 'respostas', response.id), {
         ...response,
         serverCreatedAt: serverTimestamp(),
       });
+      
+      // Wait up to 600ms. Se a rede for lenta, resolvemos antecipadamente e o Firebase sincroniza em background.
+      await Promise.race([
+        dbPromise,
+        new Promise((resolve) => setTimeout(resolve, 600))
+      ]);
     } catch (err) {
-      console.error('Firebase sync failed for response:', err);
-      throw err; // Propagate the error so the UI shows failure if db fails
+      console.warn('Firebase sync timeout or error, syncing in background:', err);
+      // We don't throw to prevent blocking the UI, letting the offline persistence handle it.
     }
   }
 }
