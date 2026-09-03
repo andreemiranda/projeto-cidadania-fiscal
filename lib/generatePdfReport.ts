@@ -171,7 +171,7 @@ export function generatePdfReport(
     startY: currentY,
     margin: { left: margin, right: margin },
     theme: 'grid',
-    head: [['FICHA DE IDENTIFICAÇÃO ACADÊMICA E INSTITUCIONAL', 'DETALHAMENTO DO PROJETO']],
+    head: [['ITEM METODOLÓGICO', 'DETALHAMENTO DO PROJETO']],
     body: [
       ['Instituição de Ensino Superior', 'Universidade do Estado do Tocantins (UNITINS)'],
       ['Polo Universitário Presencial', 'Polo UAB de Pedro Afonso – Estado do Tocantins'],

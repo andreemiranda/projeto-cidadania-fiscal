@@ -77,7 +77,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
             ) {
               setDeviceBlocked(true);
               setDeviceBlockedMessage(
-                `Este dispositivo/navegador físico (ID: ${deviceId.slice(0, 16)}...) já registrou uma submissão para esta pesquisa vinculada a outro e-mail institucional. Para preservar o rigor científico e a unicidade amostral da UNITINS, cada dispositivo pode responder uma única vez.`
+                `Este dispositivo já registrou uma submissão para esta pesquisa vinculada a outro e-mail institucional. Para preservar o rigor científico e a unicidade amostral da UNITINS, cada dispositivo pode responder uma única vez.`
               );
             } else {
               // Same user loaded previous response for review/editing
@@ -249,10 +249,6 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
             <span className="font-bold text-black">Idade Computada:</span>
             <span className="font-extrabold text-emerald-800">{ageResult.age} anos (Maior de 18 anos)</span>
           </div>
-          <div className="flex justify-between border-b border-slate-200 pb-1.5">
-            <span className="font-bold text-black">Identificador de Dispositivo:</span>
-            <span className="font-mono text-black">{browserId ? browserId.slice(0, 22) + '...' : 'BRW-VERIFIED'}</span>
-          </div>
           <div className="flex justify-between">
             <span className="font-bold text-black">Data do Registro:</span>
             <span className="font-mono text-black">{new Date().toLocaleString('pt-BR')}</span>
@@ -324,10 +320,6 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
               <span>Resposta Anterior Carregada (Modo Atualização)</span>
             </div>
           )}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200 text-black border border-slate-400 text-[11px] font-bold">
-            <Laptop className="w-3.5 h-3.5 text-black" />
-            <span>Dispositivo: {browserId ? browserId.slice(0, 14) : 'BRW-VERIFY'}</span>
-          </div>
         </div>
       </div>
 

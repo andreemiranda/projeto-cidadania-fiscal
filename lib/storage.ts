@@ -16,41 +16,44 @@ const LOCAL_STORAGE_QUESTIONS_KEY = 'unitins_fiscal_questions_v1';
 const LOCAL_STORAGE_RESPONSES_KEY = 'unitins_fiscal_responses_v1';
 
 /**
- * Loads the active list of questions
+ * Loads the active list of questions (Local-first for zero latency, with background Firestore sync)
  */
 export async function getQuestionsList(): Promise<Question[]> {
-  if (isConfigured && db) {
-    try {
-      const qRef = collection(db, 'perguntas');
-      const qSnap = await getDocs(query(qRef, orderBy('order', 'asc')));
-      if (!qSnap.empty) {
-        const list: Question[] = [];
-        qSnap.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Question, 'id'>) });
-        });
-        return list;
-      }
-    } catch (err) {
-      console.warn('Could not read questions from Firestore, checking local storage:', err);
-    }
-  }
-
-  // Fallback to localStorage or DEFAULT_QUESTIONS
+  let localQuestions: Question[] = DEFAULT_QUESTIONS;
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(LOCAL_STORAGE_QUESTIONS_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          localQuestions = parsed;
         }
       } catch {
-        // ignore parse error
+        // ignore
       }
     }
   }
 
-  return DEFAULT_QUESTIONS;
+  // If Firestore is available, fetch in background and update local cache if successful
+  if (isConfigured && db) {
+    getDocs(query(collection(db, 'perguntas'), orderBy('order', 'asc')))
+      .then((qSnap) => {
+        if (!qSnap.empty) {
+          const list: Question[] = [];
+          qSnap.forEach((docSnap) => {
+            list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Question, 'id'>) });
+          });
+          if (typeof window !== 'undefined' && list.length > 0) {
+            localStorage.setItem(LOCAL_STORAGE_QUESTIONS_KEY, JSON.stringify(list));
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Background Firestore question sync warning:', err);
+      });
+  }
+
+  return localQuestions;
 }
 
 /**
@@ -161,38 +164,44 @@ export async function submitSurveyResponse(response: SurveyResponse): Promise<vo
 }
 
 /**
- * Retrieves all survey responses
+ * Retrieves all survey responses (Local-first for zero latency, with background Firestore sync)
  */
 export async function getAllResponses(): Promise<SurveyResponse[]> {
-  if (isConfigured && db) {
-    try {
-      const rRef = collection(db, 'respostas');
-      const rSnap = await getDocs(query(rRef, orderBy('createdAt', 'desc')));
-      if (!rSnap.empty) {
-        const list: SurveyResponse[] = [];
-        rSnap.forEach((docSnap) => {
-          list.push(docSnap.data() as SurveyResponse);
-        });
-        return list;
-      }
-    } catch (err) {
-      console.warn('Could not load responses from Firestore, checking local storage:', err);
-    }
-  }
-
-  // Fallback to localStorage
+  let localResponses: SurveyResponse[] = [];
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localResponses = parsed;
+        }
       } catch {
-        return [];
+        // ignore
       }
     }
   }
 
-  return [];
+  // If Firestore is available, fetch in background and update local cache if successful
+  if (isConfigured && db) {
+    getDocs(query(collection(db, 'respostas'), orderBy('createdAt', 'desc')))
+      .then((rSnap) => {
+        if (!rSnap.empty) {
+          const list: SurveyResponse[] = [];
+          rSnap.forEach((docSnap) => {
+            list.push(docSnap.data() as SurveyResponse);
+          });
+          if (typeof window !== 'undefined' && list.length > 0) {
+            localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(list));
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Background Firestore responses sync warning:', err);
+      });
+  }
+
+  return localResponses;
 }
 
 /**

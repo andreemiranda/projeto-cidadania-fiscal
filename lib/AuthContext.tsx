@@ -4,11 +4,12 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   User,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
 import { auth, googleProvider, isConfigured, isUserAdmin } from './firebase';
-import AuthGuidanceModal from '@/components/AuthGuidanceModal';
 
 interface AuthContextType {
   user: User | null;
@@ -16,9 +17,9 @@ interface AuthContextType {
   isAdmin: boolean;
   isFirebaseActive: boolean;
   loginWithGoogle: () => Promise<void>;
+  loginAsDemoAdmin: () => void;
+  loginAsDemoUser: () => void;
   logout: () => Promise<void>;
-  simulateLoginAs: (email: string, name: string) => void;
-  openAuthModal: (code?: string, msg?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,54 +28,63 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   isFirebaseActive: false,
   loginWithGoogle: async () => {},
+  loginAsDemoAdmin: () => {},
+  loginAsDemoUser: () => {},
   logout: async () => {},
-  simulateLoginAs: () => {},
-  openAuthModal: () => {},
 });
 
-const LOCAL_USER_KEY = 'unitins_simulated_user_v1';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(LOCAL_USER_KEY);
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState<boolean>(() => Boolean(isConfigured && auth && !user));
-
-  // Guidance modal state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalErrorCode, setModalErrorCode] = useState<string | null>(null);
-  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(() => Boolean(isConfigured && auth));
 
   useEffect(() => {
+    // Check localStorage for demo login first
+    if (typeof window !== 'undefined') {
+      const demoUserEmail = localStorage.getItem('unitins_fiscal_demo_user');
+      if (demoUserEmail) {
+        setUser({
+          uid: 'demo-user-id',
+          email: demoUserEmail,
+          displayName: demoUserEmail.includes('suporte') ? 'Administrador UNITINS' : 'Pesquisador/Usuário',
+          photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
+          emailVerified: true,
+          isAnonymous: false,
+          metadata: {},
+          providerData: [],
+          refreshToken: '',
+          tenantId: null,
+          delete: async () => {},
+          getIdToken: async () => 'demo-token',
+          getIdTokenResult: async () => ({} as any),
+          reload: async () => {},
+          toJSON: () => ({}),
+        } as unknown as User);
+        setLoading(false);
+        return;
+      }
+    }
+
     if (isConfigured && auth) {
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-        if (firebaseUser) {
-          setUser(firebaseUser);
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem(LOCAL_USER_KEY);
+      // Handle redirect result if signInWithRedirect was used
+      getRedirectResult(auth)
+        .then((result) => {
+          if (result?.user) {
+            setUser(result.user);
           }
-        }
+        })
+        .catch((err) => {
+          console.warn('[Firebase Auth] Redirect result warning:', err);
+        });
+
+      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setUser(firebaseUser);
         setLoading(false);
       });
       return () => unsubscribe();
+    } else {
+      setLoading(false);
     }
   }, []);
-
-  const openAuthModal = (code?: string, msg?: string) => {
-    setModalErrorCode(code || null);
-    setModalErrorMessage(msg || null);
-    setIsModalOpen(true);
-  };
 
   const loginWithGoogle = async () => {
     if (isConfigured && auth) {
@@ -83,39 +93,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (err: unknown) {
         const errorObj = err as { code?: string; message?: string };
         const code = errorObj?.code || '';
-        const msg = errorObj?.message || (err instanceof Error ? err.message : String(err));
-
-        console.warn('[Firebase Auth] Retorno na tentativa de login:', code || msg);
-
-        if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        console.warn('[Firebase Auth] Popup login failed:', code || err);
+        
+        if (code === 'auth/unauthorized-domain') {
+          const proceed = window.confirm(
+            '⚠️ Domínio não autorizado no Firebase Console (auth/unauthorized-domain).\n\n' +
+            'Deseja entrar imediatamente em Modo de Demonstração / Teste como Administrador para testar todas as funcionalidades do sistema?'
+          );
+          if (proceed) {
+            loginAsDemoAdmin();
+          }
           return;
         }
 
-        openAuthModal(code || 'auth/error', msg);
+        try {
+          await signInWithRedirect(auth, googleProvider);
+        } catch (redirectErr: unknown) {
+          const redObj = redirectErr as { code?: string };
+          console.error('[Firebase Auth] Redirect login error:', redObj?.code || redirectErr);
+          if (redObj?.code === 'auth/unauthorized-domain') {
+            const proceed = window.confirm(
+              '⚠️ Domínio não autorizado no Firebase Console (auth/unauthorized-domain).\n\n' +
+              'Deseja entrar em Modo de Demonstração / Teste como Administrador?'
+            );
+            if (proceed) {
+              loginAsDemoAdmin();
+            }
+          } else {
+            alert('Não foi possível concluir o login com o Google (domínio não autorizado ou popups bloqueados). Entre com o Modo de Demonstração abaixo.');
+          }
+        }
       }
     } else {
-      openAuthModal();
+      // Fallback demo login when Firebase is not configured
+      loginAsDemoAdmin();
     }
   };
 
-  const simulateLoginAs = (email: string, name: string) => {
-    const mockUser = {
-      uid: 'user_' + btoa(email).replace(/=/g, ''),
-      email,
-      displayName: name || email.split('@')[0],
-      photoURL: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-        name || email
-      )}`,
+  const loginAsDemoAdmin = () => {
+    const adminUser = {
+      uid: 'demo-admin-id',
+      email: 'suporte.camarapa@gmail.com',
+      displayName: 'Administrador UNITINS',
+      photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=faces',
       emailVerified: true,
+      isAnonymous: false,
+      metadata: {},
+      providerData: [],
+      refreshToken: '',
+      tenantId: null,
+      delete: async () => {},
+      getIdToken: async () => 'demo-token',
+      getIdTokenResult: async () => ({} as any),
+      reload: async () => {},
+      toJSON: () => ({}),
     } as unknown as User;
 
-    setUser(mockUser);
+    setUser(adminUser);
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(mockUser));
+      localStorage.setItem('unitins_fiscal_demo_user', 'suporte.camarapa@gmail.com');
+    }
+  };
+
+  const loginAsDemoUser = () => {
+    const normalUser = {
+      uid: 'demo-participant-id',
+      email: 'pesquisador.participante@unitins.br',
+      displayName: 'Participante da Pesquisa',
+      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
+      emailVerified: true,
+      isAnonymous: false,
+      metadata: {},
+      providerData: [],
+      refreshToken: '',
+      tenantId: null,
+      delete: async () => {},
+      getIdToken: async () => 'demo-token',
+      getIdTokenResult: async () => ({} as any),
+      reload: async () => {},
+      toJSON: () => ({}),
+    } as unknown as User;
+
+    setUser(normalUser);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('unitins_fiscal_demo_user', 'pesquisador.participante@unitins.br');
     }
   };
 
   const logout = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('unitins_fiscal_demo_user');
+    }
     if (isConfigured && auth) {
       try {
         await signOut(auth);
@@ -124,9 +192,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     setUser(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(LOCAL_USER_KEY);
-    }
   };
 
   const isAdmin = isUserAdmin(user?.email);
@@ -139,25 +204,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAdmin,
         isFirebaseActive: isConfigured,
         loginWithGoogle,
+        loginAsDemoAdmin,
+        loginAsDemoUser,
         logout,
-        simulateLoginAs,
-        openAuthModal,
       }}
     >
       {children}
-
-      {/* Global Guidance Modal for Firebase Authentication and Demo Mode */}
-      <AuthGuidanceModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        errorCode={modalErrorCode}
-        errorMessage={modalErrorMessage}
-        projectId={process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'trabalho-academico-form'}
-        onSelectAccount={(email, name) => {
-          simulateLoginAs(email, name);
-          setIsModalOpen(false);
-        }}
-      />
     </AuthContext.Provider>
   );
 }
@@ -165,3 +217,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
