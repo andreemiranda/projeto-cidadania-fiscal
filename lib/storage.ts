@@ -151,14 +151,17 @@ export async function submitSurveyResponse(response: SurveyResponse): Promise<vo
     localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(updated));
   }
 
-  // Fire-and-forget to Firestore in background
+  // Await Firestore persistence to ensure it doesn't get cancelled
   if (isConfigured && db) {
-    setDoc(doc(db, 'respostas', response.id), {
-      ...response,
-      serverCreatedAt: serverTimestamp(),
-    }).catch((err) => {
-      console.warn('Background sync failed for response:', err);
-    });
+    try {
+      await setDoc(doc(db, 'respostas', response.id), {
+        ...response,
+        serverCreatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('Firebase sync failed for response:', err);
+      throw err; // Propagate the error so the UI shows failure if db fails
+    }
   }
 }
 

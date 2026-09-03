@@ -48,12 +48,12 @@ export function generatePdfReport(
     doc.line(margin, 16, pageWidth - margin, 16);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11.5);
     doc.setTextColor(...colorBluePrimary);
     doc.text(headerMainTitle, margin + 2, 13.5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10.9);
+    doc.setFontSize(11);
     doc.setTextColor(100, 116, 139);
     doc.text('POLO UAB PEDRO AFONSO - TO', pageWidth - margin - 2, 13.5, { align: 'right' });
   };
@@ -80,7 +80,7 @@ export function generatePdfReport(
 
       // Texto institucional à esquerda
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10.9);
+      doc.setFontSize(11);
       doc.setTextColor(71, 85, 105);
       doc.text(
         `Universidade do Estado do Tocantins (UNITINS) • Polo UAB Pedro Afonso - TO | Cidadania Fiscal`,
@@ -90,7 +90,7 @@ export function generatePdfReport(
 
       // Data, hora e numeração à direita
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.2);
+      doc.setFontSize(11.5);
       doc.setTextColor(...colorBluePrimary);
       doc.text(
         `Página ${i} de ${totalPages} • Emitido às ${new Date().toLocaleTimeString('pt-BR')}`,
@@ -115,10 +115,10 @@ export function generatePdfReport(
 
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16.8);
+  doc.setFontSize(11.5);
   doc.text(headerMainTitle, margin + 4, currentY + 11.2);
 
-  doc.setFontSize(12);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
   doc.text(
     'UNIVERSIDADE DO ESTADO DO TOCANTINS – UNITINS | SISTEMA UNIVERSIDADE ABERTA DO BRASIL (UAB)',
@@ -143,12 +143,12 @@ export function generatePdfReport(
 
   doc.setTextColor(...colorBluePrimary);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(11.5);
   doc.text(`TEMA: ${projectTitle.toUpperCase()}`, margin + 3.5, currentY + 8.8);
 
   doc.setTextColor(71, 85, 105);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(12);
+  doc.setFontSize(11);
   doc.text(
     'Subtítulo: Análise Diagnóstica da Consciência Tributária e Percepção Social da População Consumidora',
     margin + 3.5,
@@ -184,21 +184,22 @@ export function generatePdfReport(
       fillColor: colorTableHead,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 12,
-      cellPadding: 1.5,
+      fontSize: 11.5,
+      cellPadding: 2,
     },
     bodyStyles: {
       textColor: colorTextDark,
-      fontSize: 11.5,
-      cellPadding: 1.4,
+      fontSize: 11,
+      cellPadding: 2,
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
     },
     columnStyles: {
-      0: { cellWidth: 62, fontStyle: 'bold' },
-      1: { cellWidth: contentWidth - 62 },
+      0: { cellWidth: 70, fontStyle: 'bold' },
+      1: { cellWidth: contentWidth - 70 },
     },
+    styles: { overflow: 'linebreak' },
   });
 
   // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
@@ -209,13 +210,13 @@ export function generatePdfReport(
   doc.setFillColor(...colorBluePrimary);
   doc.rect(margin, currentY, contentWidth, 9, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12.8);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.text('1. CONTEXTUALIZAÇÃO TEÓRICA E METODOLOGIA CIENTÍFICA', margin + 3, currentY + 6.1);
 
   currentY += 12.8;
   doc.setTextColor(...colorTextDark);
-  doc.setFontSize(11.7);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
 
   const textMetodologia =
@@ -230,7 +231,7 @@ export function generatePdfReport(
   doc.setFillColor(...colorBluePrimary);
   doc.rect(margin, currentY, contentWidth, 9, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12.8);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.text(
     `2. ESTATÍSTICA DESCRITIVA DA AMOSTRA COLETADA (N = ${stats.totalResponses})`,
@@ -328,21 +329,22 @@ export function generatePdfReport(
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 11.5,
-      cellPadding: 1.3,
+      cellPadding: 2,
     },
     bodyStyles: {
-      fontSize: 11.2,
+      fontSize: 11,
       textColor: colorTextDark,
-      cellPadding: 1.2,
+      cellPadding: 2,
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
     },
     columnStyles: {
-      0: { cellWidth: 62, fontStyle: 'bold' },
-      1: { cellWidth: 36, halign: 'center', fontStyle: 'bold' },
-      2: { cellWidth: contentWidth - 98 },
+      0: { cellWidth: 70, fontStyle: 'bold' },
+      1: { cellWidth: 35, halign: 'center', fontStyle: 'bold' },
+      2: { cellWidth: contentWidth - 105 },
     },
+    styles: { overflow: 'linebreak' },
   });
 
   // ==========================================
@@ -355,7 +357,7 @@ export function generatePdfReport(
   doc.setFillColor(...colorBluePrimary);
   doc.rect(margin, currentY, contentWidth, 9, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12.8);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.text('3. ANÁLISE QUANTITATIVA POR QUESTÃO E GRÁFICOS DE FREQUÊNCIA', margin + 3, currentY + 6.1);
 
@@ -398,7 +400,7 @@ export function generatePdfReport(
     doc.rect(margin, currentY, 2.5, 11, 'F');
 
     doc.setTextColor(...colorTextDark);
-    doc.setFontSize(12.5);
+    doc.setFontSize(11.5);
     doc.setFont('helvetica', 'bold');
     const cleanTitle = `Questão ${qIdx + 1}: ${question.title.replace(/^\d+\.\s*/, '')}`;
     doc.text(cleanTitle, margin + 4.5, currentY + 7.4, { maxWidth: contentWidth - 8 });
@@ -407,7 +409,7 @@ export function generatePdfReport(
 
     if (!qStat || qStat.totalAnswers === 0) {
       doc.setTextColor(100, 116, 139);
-      doc.setFontSize(11.5);
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'italic');
       doc.text('Sem respostas registradas para esta questão até o momento.', margin + 2, currentY + 4.8);
       currentY += 11.2;
@@ -437,24 +439,25 @@ export function generatePdfReport(
       headStyles: {
         fillColor: colorTableHead,
         textColor: [255, 255, 255],
-        fontSize: 10.9,
+        fontSize: 11.5,
         fontStyle: 'bold',
-        cellPadding: 1.2,
+        cellPadding: 2,
       },
       bodyStyles: {
-        fontSize: 10.9,
+        fontSize: 11,
         textColor: colorTextDark,
-        cellPadding: 1.1,
+        cellPadding: 2,
       },
       alternateRowStyles: {
         fillColor: [248, 250, 252],
       },
       columnStyles: {
-        0: { cellWidth: 102 }, // Coluna larga que comporta frases inteiras sem quebras indesejadas
+        0: { cellWidth: 95 }, 
         1: { cellWidth: 26, halign: 'center', fontStyle: 'bold' },
-        2: { cellWidth: 27, halign: 'center', fontStyle: 'bold', textColor: [37, 99, 235] },
-        3: { cellWidth: 27, halign: 'center' },
+        2: { cellWidth: 30, halign: 'center', fontStyle: 'bold', textColor: [37, 99, 235] },
+        3: { cellWidth: 31, halign: 'center' },
       },
+      styles: { overflow: 'linebreak' },
     });
 
     // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
@@ -467,7 +470,7 @@ export function generatePdfReport(
       doc.roundedRect(margin, currentY, contentWidth, 7, 0.8, 0.8, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.9);
+      doc.setFontSize(11);
       doc.setTextColor(107, 33, 168);
       doc.text(
         `Estatística da Escala: Média Ponderada (x̄) = ${qStat.meanRating.toFixed(2)} / 5.0 | Desvio Padrão (s) = ${qStat.stdDevRating?.toFixed(2) ?? '0.00'} | Mediana = ${qStat.medianRating ?? qStat.meanRating}`,
@@ -487,7 +490,7 @@ export function generatePdfReport(
       // Texto da opção à esquerda (compacto, sem quebra forçada)
       const shortOpt = opt.length > 34 ? opt.substring(0, 32) + '...' : opt;
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.4);
+      doc.setFontSize(11);
       doc.setTextColor(51, 65, 85);
       doc.text(shortOpt, margin + 2, currentY + 4.5);
 
@@ -502,7 +505,7 @@ export function generatePdfReport(
 
       // Rótulo numérico à direita
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.4);
+      doc.setFontSize(11);
       doc.setTextColor(...colorNavyDark);
       doc.text(`${pct.toFixed(1)}% (${count})`, margin + 64 + barMaxWidth + 2.5, currentY + 4.2);
 
@@ -522,14 +525,14 @@ export function generatePdfReport(
   doc.setFillColor(...colorBluePrimary);
   doc.rect(margin, currentY, contentWidth, 9, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12.8);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.text('4. LISTA NOMINAL DE PARTICIPANTES E AUDITORIA DE RESPOSTAS', margin + 3, currentY + 6.1);
 
   currentY += 12.8;
 
   doc.setTextColor(...colorTextDark);
-  doc.setFontSize(11.5);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
   doc.text(
     'Relação formal e auditada de cidadãos que participaram da pesquisa mediante autenticação Google e controle de dispositivo:',
@@ -570,26 +573,27 @@ export function generatePdfReport(
     headStyles: {
       fillColor: colorTableHead,
       textColor: [255, 255, 255],
-      fontSize: 10.9,
+      fontSize: 11.5,
       fontStyle: 'bold',
-      cellPadding: 1.3,
+      cellPadding: 2,
     },
     bodyStyles: {
-      fontSize: 10.6,
+      fontSize: 11,
       textColor: colorTextDark,
-      cellPadding: 1.1,
+      cellPadding: 2,
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 62 },
+      0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 55 },
       2: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
-      3: { cellWidth: 38 },
+      3: { cellWidth: 37 },
       4: { cellWidth: 32 },
-      5: { cellWidth: 24, halign: 'center', textColor: [5, 150, 105], fontStyle: 'bold' },
+      5: { cellWidth: 30, halign: 'center', textColor: [5, 150, 105], fontStyle: 'bold' },
     },
+    styles: { overflow: 'linebreak' },
   });
 
   // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
@@ -602,13 +606,13 @@ export function generatePdfReport(
   doc.setFillColor(...colorBluePrimary);
   doc.rect(margin, currentY, contentWidth, 9, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12.8);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.text('5. CONSIDERAÇÕES TÉCNICO-CIENTÍFICAS E CONCLUSÃO', margin + 3, currentY + 6.1);
 
   currentY += 12.8;
   doc.setTextColor(...colorTextDark);
-  doc.setFontSize(11.5);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
 
   const textConclusao =
@@ -628,14 +632,14 @@ export function generatePdfReport(
   doc.line(margin + 10, currentY, margin + colWidth - 10, currentY);
   doc.line(margin + colWidth + 10, currentY, margin + contentWidth - 10, currentY);
 
-  doc.setFontSize(12);
+  doc.setFontSize(11.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...colorBluePrimary);
   doc.text('Equipe Acadêmica Extensionista', margin + colWidth / 2, currentY + 6.4, { align: 'center' });
   doc.text('Coordenação do Polo – Pedro Afonso / TO', margin + colWidth + colWidth / 2, currentY + 6.4, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10.9);
+  doc.setFontSize(11);
   doc.setTextColor(71, 85, 105);
   doc.text('Discentes do Curso de Administração Pública', margin + colWidth / 2, currentY + 12, { align: 'center' });
   doc.text('Universidade do Estado do Tocantins – UNITINS / UAB', margin + colWidth + colWidth / 2, currentY + 12, { align: 'center' });

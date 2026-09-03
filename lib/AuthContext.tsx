@@ -38,32 +38,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState<boolean>(() => Boolean(isConfigured && auth));
 
   useEffect(() => {
-    // Check localStorage for demo login first
-    if (typeof window !== 'undefined') {
-      const demoUserEmail = localStorage.getItem('unitins_fiscal_demo_user');
-      if (demoUserEmail) {
-        setUser({
-          uid: 'demo-user-id',
-          email: demoUserEmail,
-          displayName: demoUserEmail.includes('suporte') ? 'Administrador UNITINS' : 'Pesquisador/Usuário',
-          photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-          emailVerified: true,
-          isAnonymous: false,
-          metadata: {},
-          providerData: [],
-          refreshToken: '',
-          tenantId: null,
-          delete: async () => {},
-          getIdToken: async () => 'demo-token',
-          getIdTokenResult: async () => ({} as any),
-          reload: async () => {},
-          toJSON: () => ({}),
-        } as unknown as User);
-        setLoading(false);
-        return;
-      }
-    }
-
     if (isConfigured && auth) {
       // Handle redirect result if signInWithRedirect was used
       getRedirectResult(auth)
@@ -95,38 +69,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const code = errorObj?.code || '';
         console.warn('[Firebase Auth] Popup login failed:', code || err);
         
-        if (code === 'auth/unauthorized-domain') {
-          const proceed = window.confirm(
-            '⚠️ Domínio não autorizado no Firebase Console (auth/unauthorized-domain).\n\n' +
-            'Deseja entrar imediatamente em Modo de Demonstração / Teste como Administrador para testar todas as funcionalidades do sistema?'
-          );
-          if (proceed) {
-            loginAsDemoAdmin();
-          }
-          return;
-        }
-
         try {
           await signInWithRedirect(auth, googleProvider);
         } catch (redirectErr: unknown) {
           const redObj = redirectErr as { code?: string };
           console.error('[Firebase Auth] Redirect login error:', redObj?.code || redirectErr);
-          if (redObj?.code === 'auth/unauthorized-domain') {
-            const proceed = window.confirm(
-              '⚠️ Domínio não autorizado no Firebase Console (auth/unauthorized-domain).\n\n' +
-              'Deseja entrar em Modo de Demonstração / Teste como Administrador?'
-            );
-            if (proceed) {
-              loginAsDemoAdmin();
-            }
-          } else {
-            alert('Não foi possível concluir o login com o Google (domínio não autorizado ou popups bloqueados). Entre com o Modo de Demonstração abaixo.');
-          }
+          alert('Não foi possível concluir o login com o Google.');
         }
       }
     } else {
-      // Fallback demo login when Firebase is not configured
-      loginAsDemoAdmin();
+      alert('O Firebase não está configurado.');
     }
   };
 

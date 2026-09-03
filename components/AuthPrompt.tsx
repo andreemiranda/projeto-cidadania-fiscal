@@ -53,31 +53,6 @@ export default function AuthPrompt() {
         </button>
       </div>
 
-      {/* Demo / Fallback login options for testing without domain authorization issues */}
-      <div className="mt-6 pt-6 border-t border-slate-200">
-        <p className="text-xs text-slate-500 mb-3 font-medium">
-          Caso encontre bloqueio de domínio (ex: unauthorized-domain no preview), acesse diretamente para testes:
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={loginAsDemoAdmin}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300 transition cursor-pointer"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Entrar como Administrador (Demo)</span>
-          </button>
-          <button
-            type="button"
-            onClick={loginAsDemoUser}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold border border-blue-300 transition cursor-pointer"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Entrar como Participante (Demo)</span>
-          </button>
-        </div>
-      </div>
-
       <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-black font-semibold">
         <ShieldCheck className="w-4 h-4 text-emerald-600" />
         <span>Ambiente seguro • Amostragem protegida por protocolo de usuário e dispositivo único</span>

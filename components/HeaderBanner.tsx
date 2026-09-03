@@ -128,13 +128,6 @@ export default function HeaderBanner() {
             <span className="text-slate-300">/</span>
             <span className="text-slate-700">Questionário Extensionista de Coleta</span>
           </div>
-
-          {!isFirebaseActive && (
-            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded font-medium flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-              <span>Modo Local / Demonstração</span>
-            </div>
-          )}
         </div>
       </div>
     </header>

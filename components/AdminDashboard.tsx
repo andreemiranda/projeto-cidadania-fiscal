@@ -793,7 +793,7 @@ export default function AdminDashboard() {
                   <span className="text-emerald-700 font-semibold">Firebase Firestore Conectado</span>
                 ) : (
                   <span className="text-amber-700 font-semibold">
-                    Modo Local / Armazenamento do Navegador (Configure as credenciais do Firebase nas variáveis de ambiente para sincronização online)
+                    Desconectado (Configure as credenciais do Firebase nas variáveis de ambiente para sincronização online)
                   </span>
                 )}
               </div>

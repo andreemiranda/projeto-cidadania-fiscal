@@ -36,7 +36,7 @@ interface FiscalFormProps {
 }
 
 export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const formId = useId();
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -197,6 +197,19 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
       await submitSurveyResponse(responseData);
       setPreviousResponse(responseData);
       setSubmitted(true);
+      
+      // Play success sound
+      try {
+        const audio = new Audio();
+        if (audio.canPlayType('audio/mpeg')) {
+          audio.src = '/success.mp3';
+        } else {
+          audio.src = '/success.ogg';
+        }
+        audio.play().catch((e) => console.log('Audio play prevented:', e));
+      } catch (e) {
+        console.log('Audio feature error:', e);
+      }
     } catch (err) {
       console.error('Submission failed:', err);
       setErrorMsg('Ocorreu um erro ao gravar sua resposta. Por favor, tente novamente.');
@@ -257,7 +270,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
 
         {/* Action Buttons: View Report Tab, Download PDF, or Review Answers */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          {onViewReport && (
+          {isAdmin && onViewReport && (
             <button
               type="button"
               onClick={onViewReport}
@@ -268,14 +281,16 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleDownloadDirectPdf}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer shadow-sm"
-          >
-            <FileDown className="w-4 h-4 text-emerald-400" />
-            <span>Baixar Relatório em PDF</span>
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleDownloadDirectPdf}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer shadow-sm"
+            >
+              <FileDown className="w-4 h-4 text-emerald-400" />
+              <span>Baixar Relatório em PDF</span>
+            </button>
+          )}
 
           <button
             type="button"
