@@ -142,24 +142,23 @@ export async function restoreDefaultQuestions(): Promise<Question[]> {
  * Submits a new survey response
  */
 export async function submitSurveyResponse(response: SurveyResponse): Promise<void> {
-  if (isConfigured && db) {
-    try {
-      await setDoc(doc(db, 'respostas', response.id), {
-        ...response,
-        serverCreatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.warn('Error saving response to Firestore, storing locally:', err);
-    }
-  }
-
-  // Always keep a local copy
+  // Save to local storage IMMEDIATELY for zero latency
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
     const list: SurveyResponse[] = saved ? JSON.parse(saved) : [];
     // Replace if same ID or add
     const updated = [response, ...list.filter((r) => r.id !== response.id)];
     localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(updated));
+  }
+
+  // Fire-and-forget to Firestore in background
+  if (isConfigured && db) {
+    setDoc(doc(db, 'respostas', response.id), {
+      ...response,
+      serverCreatedAt: serverTimestamp(),
+    }).catch((err) => {
+      console.warn('Background sync failed for response:', err);
+    });
   }
 }
 
