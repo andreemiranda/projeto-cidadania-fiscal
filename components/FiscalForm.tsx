@@ -42,6 +42,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [previousResponse, setPreviousResponse] = useState<SurveyResponse | null>(null);
   const [browserId, setBrowserId] = useState<string>('');
@@ -80,10 +81,9 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
                 `Este dispositivo já registrou uma submissão para esta pesquisa vinculada a outro e-mail institucional. Para preservar o rigor científico e a unicidade amostral da UNITINS, cada dispositivo pode responder uma única vez.`
               );
             } else {
-              // Same user loaded previous response for review/editing
-              setPreviousResponse(check.existingResponse);
+              // User already submitted. Show the success screen directly.
               setBirthDate(check.existingResponse.birthDate || '');
-              setAnswers(check.existingResponse.answers || {});
+              setSubmitted(true);
             }
           }
         }
@@ -181,7 +181,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
     try {
       const activeBrowserId = browserId || getBrowserDeviceId();
       const responseData: SurveyResponse = {
-        id: previousResponse ? previousResponse.id : `resp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `resp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         userId: user.uid,
         userEmail: user.email,
         userName: user.displayName || user.email.split('@')[0],
@@ -230,12 +230,15 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
   // Direct PDF download from success screen
   const handleDownloadDirectPdf = async () => {
     try {
+      setIsGeneratingPdf(true);
       const qList = questions.length ? questions : await getQuestionsList();
       const rList = await getAllResponses();
       const st = calculateSurveyStats(qList, rList);
       generateScientificPdfReport(qList, rList, st);
     } catch (err) {
       console.error('Error downloading PDF:', err);
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -268,7 +271,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
           </div>
         </div>
 
-        {/* Action Buttons: View Report Tab, Download PDF, or Review Answers */}
+        {/* Action Buttons: View Report Tab, Download PDF */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           {isAdmin && onViewReport && (
             <button
@@ -285,21 +288,13 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
             <button
               type="button"
               onClick={handleDownloadDirectPdf}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer shadow-sm"
+              disabled={isGeneratingPdf}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer shadow-sm disabled:opacity-50"
             >
-              <FileDown className="w-4 h-4 text-emerald-400" />
-              <span>Baixar Relatório em PDF</span>
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <FileDown className="w-4 h-4 text-emerald-400" />}
+              <span>{isGeneratingPdf ? 'Gerando Relatório...' : 'Baixar Relatório em PDF'}</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => setSubmitted(false)}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-slate-800 border-2 border-slate-300 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Revisar Respostas</span>
-          </button>
         </div>
       </div>
     );
@@ -329,12 +324,6 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
 
         {/* Security & Device Badge */}
         <div className="flex flex-wrap items-center gap-2">
-          {previousResponse && (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-100 text-black border border-indigo-300 text-xs font-bold">
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-800" />
-              <span>Resposta Anterior Carregada (Modo Atualização)</span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -646,7 +635,7 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
             ) : (
               <>
                 <Send className="w-4 h-4" />
-                <span>{previousResponse ? 'Atualizar Respostas' : 'Enviar Respostas'}</span>
+                <span>Enviar Respostas</span>
               </>
             )}
           </button>

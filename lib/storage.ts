@@ -6,6 +6,8 @@ import {
   deleteDoc,
   query,
   orderBy,
+  where,
+  limit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, isConfigured } from './firebase';
@@ -142,37 +144,30 @@ export async function restoreDefaultQuestions(): Promise<Question[]> {
  * Submits a new survey response
  */
 export async function submitSurveyResponse(response: SurveyResponse): Promise<void> {
-  // Save to local storage IMMEDIATELY for zero latency
+  // Save to local storage IMMEDIATELY
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
     const list: SurveyResponse[] = saved ? JSON.parse(saved) : [];
-    // Replace if same ID or add
     const updated = [response, ...list.filter((r) => r.id !== response.id)];
     localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(updated));
   }
 
-  // Await Firestore persistence with a timeout to guarantee fast UI response
+  // Await Firestore persistence securely so it is saved in the global database
   if (isConfigured && db) {
     try {
-      const dbPromise = setDoc(doc(db, 'respostas', response.id), {
+      await setDoc(doc(db, 'respostas', response.id), {
         ...response,
         serverCreatedAt: serverTimestamp(),
       });
-      
-      // Wait up to 600ms. Se a rede for lenta, resolvemos antecipadamente e o Firebase sincroniza em background.
-      await Promise.race([
-        dbPromise,
-        new Promise((resolve) => setTimeout(resolve, 600))
-      ]);
     } catch (err) {
-      console.warn('Firebase sync timeout or error, syncing in background:', err);
-      // We don't throw to prevent blocking the UI, letting the offline persistence handle it.
+      console.error('Firebase sync error:', err);
+      throw new Error('Falha ao gravar no banco de dados principal. Tente novamente.');
     }
   }
 }
 
 /**
- * Retrieves all survey responses (Local-first for zero latency, with background Firestore sync)
+ * Retrieves all survey responses (Firestore first to ensure global count, with fallback to local)
  */
 export async function getAllResponses(): Promise<SurveyResponse[]> {
   let localResponses: SurveyResponse[] = [];
@@ -190,23 +185,23 @@ export async function getAllResponses(): Promise<SurveyResponse[]> {
     }
   }
 
-  // If Firestore is available, fetch in background and update local cache if successful
+  // Await Firestore to fetch all responses so the PDF and Dashboard are always up to date
   if (isConfigured && db) {
-    getDocs(query(collection(db, 'respostas'), orderBy('createdAt', 'desc')))
-      .then((rSnap) => {
-        if (!rSnap.empty) {
-          const list: SurveyResponse[] = [];
-          rSnap.forEach((docSnap) => {
-            list.push(docSnap.data() as SurveyResponse);
-          });
-          if (typeof window !== 'undefined' && list.length > 0) {
-            localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(list));
-          }
+    try {
+      const rSnap = await getDocs(query(collection(db, 'respostas'), orderBy('createdAt', 'desc')));
+      if (!rSnap.empty) {
+        const list: SurveyResponse[] = [];
+        rSnap.forEach((docSnap) => {
+          list.push(docSnap.data() as SurveyResponse);
+        });
+        if (typeof window !== 'undefined' && list.length > 0) {
+          localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(list));
         }
-      })
-      .catch((err) => {
-        console.warn('Background Firestore responses sync warning:', err);
-      });
+        return list; // Return fresh data directly from Firestore
+      }
+    } catch (err) {
+      console.warn('Error fetching Firestore responses, falling back to local storage:', err);
+    }
   }
 
   return localResponses;
@@ -246,14 +241,76 @@ export async function checkUserOrBrowserAlreadySubmitted(
   byBrowser: boolean;
   existingResponse: SurveyResponse | null;
 }> {
-  const all = await getAllResponses();
+  if (isConfigured && db) {
+    try {
+      let foundEmail = false;
+      let foundBrowser = false;
+      let existingResponse = null;
 
-  const foundByEmail = all.find(
+      if (email) {
+        const qEmail = query(
+          collection(db, 'respostas'),
+          where('userEmail', '==', email),
+          limit(1)
+        );
+        const snapEmail = await getDocs(qEmail);
+        if (!snapEmail.empty) {
+          foundEmail = true;
+          existingResponse = snapEmail.docs[0].data() as SurveyResponse;
+        }
+      }
+
+      if (!foundEmail && browserId) {
+        const qBrowser = query(
+          collection(db, 'respostas'),
+          where('browserId', '==', browserId),
+          limit(1)
+        );
+        const snapBrowser = await getDocs(qBrowser);
+        if (!snapBrowser.empty) {
+          foundBrowser = true;
+          existingResponse = snapBrowser.docs[0].data() as SurveyResponse;
+        }
+      }
+
+      if (foundEmail || foundBrowser) {
+        return {
+          alreadySubmitted: true,
+          byEmail: foundEmail,
+          byBrowser: foundBrowser,
+          existingResponse,
+        };
+      }
+      
+      // If not found in DB, return false immediately to load fast!
+      return {
+        alreadySubmitted: false,
+        byEmail: false,
+        byBrowser: false,
+        existingResponse: null,
+      };
+    } catch (err) {
+      console.warn('Fast query failed, falling back to local storage', err);
+    }
+  }
+
+  // Fallback to local storage (fast but not cross-device)
+  let localResponses: SurveyResponse[] = [];
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
+    if (saved) {
+      try {
+        localResponses = JSON.parse(saved);
+      } catch {}
+    }
+  }
+
+  const foundByEmail = localResponses.find(
     (r) => r.userEmail && r.userEmail.toLowerCase().trim() === email.toLowerCase().trim()
   );
 
   const foundByBrowser = browserId
-    ? all.find((r) => r.browserId && r.browserId === browserId)
+    ? localResponses.find((r) => r.browserId && r.browserId === browserId)
     : undefined;
 
   const alreadySubmitted = Boolean(foundByEmail || foundByBrowser);
