@@ -57,43 +57,62 @@ export default function FiscalForm({ onViewReport }: FiscalFormProps = {}) {
   // Age calculation state
   const ageResult = calculateExactAge(birthDate);
 
-  // Initialize questions and verify unique user/browser status
+  // Initialize questions and verify unique user/browser status in parallel
   useEffect(() => {
+    let isMounted = true;
+
     async function load() {
       try {
         const deviceId = getBrowserDeviceId();
-        setBrowserId(deviceId);
+        if (isMounted) setBrowserId(deviceId);
 
-        const qList = await getQuestionsList();
+        // Fetch questions and run check concurrently
+        const [qList, check] = await Promise.all([
+          getQuestionsList(),
+          user?.email
+            ? checkUserOrBrowserAlreadySubmitted(user.email, deviceId)
+            : Promise.resolve({
+                alreadySubmitted: false,
+                byEmail: false,
+                byBrowser: false,
+                existingResponse: null,
+              }),
+        ]);
+
+        if (!isMounted) return;
+
         setQuestions(qList);
 
-        if (user?.email) {
-          const check = await checkUserOrBrowserAlreadySubmitted(user.email, deviceId);
-
-          if (check.alreadySubmitted && check.existingResponse) {
-            // If submitted by another account on the same browser device
-            if (
-              check.byBrowser &&
-              check.existingResponse.userEmail.toLowerCase() !== user.email.toLowerCase()
-            ) {
-              setDeviceBlocked(true);
-              setDeviceBlockedMessage(
-                `Este dispositivo já registrou uma submissão para esta pesquisa vinculada a outro e-mail institucional. Para preservar o rigor científico e a unicidade amostral da UNITINS, cada dispositivo pode responder uma única vez.`
-              );
-            } else {
-              // User already submitted. Show the success screen directly.
-              setBirthDate(check.existingResponse.birthDate || '');
-              setSubmitted(true);
-            }
+        if (check.alreadySubmitted && check.existingResponse) {
+          // If submitted by another account on the same browser device
+          if (
+            check.byBrowser &&
+            user?.email &&
+            check.existingResponse.userEmail.toLowerCase() !== user.email.toLowerCase()
+          ) {
+            setDeviceBlocked(true);
+            setDeviceBlockedMessage(
+              `Este dispositivo já registrou uma submissão para esta pesquisa vinculada a outro e-mail institucional. Para preservar o rigor científico e a unicidade amostral da UNITINS, cada dispositivo pode responder uma única vez.`
+            );
+          } else {
+            // User already submitted. Show the success screen with their saved response directly
+            setBirthDate(check.existingResponse.birthDate || '');
+            setPreviousResponse(check.existingResponse);
+            setSubmitted(true);
           }
         }
       } catch (err) {
         console.error('Error loading form questions:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
+
     load();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   // Handle Answer Changes

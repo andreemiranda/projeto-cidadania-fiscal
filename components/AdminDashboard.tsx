@@ -11,8 +11,11 @@ import {
   getAllResponses,
   resetAllResponses,
   calculateSurveyStats,
+  subscribeToResponses,
+  resyncPostgresToFirestore,
 } from '@/lib/storage';
-import { generateScientificPdfReport } from '@/lib/generatePdfReport';
+import { generateScientificPdfReport, QualitativeAnalysisData } from '@/lib/generatePdfReport';
+import { generateQualitativeAnalysisAction } from '@/app/actions';
 import {
   BarChart,
   Bar,
@@ -45,6 +48,7 @@ import {
   Layers,
   ArrowUpDown,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 const CHART_COLORS = [
@@ -67,6 +71,12 @@ export default function AdminDashboard() {
   const [responses, setResponses] = useState<SurveyResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<SurveyStats | null>(null);
+
+  // Synchronization & AI State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<QualitativeAnalysisData | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Question editing / creation modal
   const [isEditingModalOpen, setIsEditingModalOpen] = useState(false);
@@ -96,29 +106,29 @@ export default function AdminDashboard() {
     }
   };
 
+  // Real-time synchronization via Firestore onSnapshot
   useEffect(() => {
     let active = true;
-    (async () => {
-      try {
-        const [qList, rList] = await Promise.all([
-          getQuestionsList(),
-          getAllResponses(),
-        ]);
-        if (active) {
-          setQuestions(qList);
-          setResponses(rList);
-          setStats(calculateSurveyStats(qList, rList));
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error loading admin data:', err);
-        if (active) {
-          setLoading(false);
-        }
-      }
-    })();
+
+    // Load questions
+    getQuestionsList().then((qList) => {
+      if (active) setQuestions(qList);
+    });
+
+    // Real-time listener: updates automatically when responses occur
+    const unsubscribe = subscribeToResponses((liveResponses) => {
+      if (!active) return;
+      setResponses(liveResponses);
+      setQuestions((currentQuestions) => {
+        setStats(calculateSurveyStats(currentQuestions, liveResponses));
+        return currentQuestions;
+      });
+      setLoading(false);
+    });
+
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
 
@@ -234,15 +244,73 @@ export default function AdminDashboard() {
     }
   };
 
-  // PDF Export
-  const handleExportPDF = () => {
-    if (!stats) return;
+  // Reconcile PostgreSQL to Firestore
+  const handleResync = async () => {
+    setIsSyncing(true);
     try {
-      generateScientificPdfReport(questions, responses, stats);
+      const res = await resyncPostgresToFirestore();
+      if (res.success) {
+        showNotification('success', res.message);
+        await refreshData();
+      } else {
+        showNotification('error', res.message);
+      }
+    } catch (err: any) {
+      showNotification('error', `Erro na ressincronização: ${err?.message || 'Falha de rede'}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Run Qualitative AI Synthesis (Gemini 2.5 Flash)
+  const handleRunAiAnalysis = async () => {
+    if (!stats) return;
+    setIsGeneratingAi(true);
+    try {
+      const allTextAnswers: string[] = [];
+      Object.values(stats.questionStats).forEach((qStat) => {
+        if (qStat.textAnswers && qStat.textAnswers.length > 0) {
+          allTextAnswers.push(...qStat.textAnswers);
+        }
+      });
+
+      const result = await generateQualitativeAnalysisAction(allTextAnswers);
+      if (result.success) {
+        setAiAnalysis({
+          summary: result.summary,
+          keyThemes: result.keyThemes,
+          citizenSentiment: result.citizenSentiment,
+          recommendations: result.recommendations,
+          source: result.source,
+        });
+        showNotification(
+          'success',
+          result.source === 'gemini'
+            ? 'Síntese qualitativa gerada com sucesso via Gemini 2.5!'
+            : 'Síntese qualitativa acadêmica processada com sucesso!'
+        );
+      }
+    } catch (err) {
+      console.error('AI Analysis error:', err);
+      showNotification('error', 'Falha ao gerar síntese qualitativa.');
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
+
+  // PDF Export (non-blocking async)
+  const handleExportPDF = async () => {
+    if (!stats) return;
+    setIsExportingPdf(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      generateScientificPdfReport(questions, responses, stats, aiAnalysis || undefined);
       showNotification('success', 'Relatório em PDF gerado e iniciado o download com sucesso!');
     } catch (err) {
       console.error('PDF generation error:', err);
       showNotification('error', 'Erro ao compilar relatório PDF.');
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -338,7 +406,7 @@ export default function AdminDashboard() {
           <button
             onClick={refreshData}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-xs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-xs cursor-pointer"
             title="Recarregar dados"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -346,11 +414,36 @@ export default function AdminDashboard() {
           </button>
 
           <button
-            onClick={handleExportPDF}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-lg shadow-indigo-100 hover:shadow-none"
+            onClick={handleResync}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold transition shadow-xs cursor-pointer disabled:opacity-50"
+            title="Ressincronizar PostgreSQL e Firestore"
           >
-            <FileDown className="w-4 h-4" />
-            <span>Baixar Relatório Científico (PDF)</span>
+            <RotateCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Ressincronizar Firestore'}</span>
+          </button>
+
+          <button
+            onClick={handleRunAiAnalysis}
+            disabled={isGeneratingAi || !stats || stats.totalResponses === 0}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-semibold transition shadow-xs cursor-pointer disabled:opacity-50"
+            title="Gerar Síntese Qualitativa via Gemini 2.5 Flash"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-purple-600 ${isGeneratingAi ? 'animate-spin' : ''}`} />
+            <span>{isGeneratingAi ? 'Processando IA...' : 'Síntese com IA'}</span>
+          </button>
+
+          <button
+            onClick={handleExportPDF}
+            disabled={isExportingPdf}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-lg shadow-indigo-100 hover:shadow-none cursor-pointer disabled:opacity-50"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            <span>{isExportingPdf ? 'Compilando PDF...' : 'Baixar Relatório Científico (PDF)'}</span>
           </button>
         </div>
       </div>
@@ -443,6 +536,79 @@ export default function AdminDashboard() {
               <p className="text-[11px] text-slate-500 mt-1">Amplitude da amostra</p>
             </div>
           </div>
+
+          {/* AI Qualitative Synthesis Card */}
+          {aiAnalysis && (
+            <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md border border-purple-900/40">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-400/30">
+                    <Sparkles className="w-5 h-5 text-amber-300" />
+                  </span>
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      Síntese Qualitativa da Percepção Cidadã
+                      <span className="text-[10px] font-semibold bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-full uppercase tracking-wider border border-purple-400/30">
+                        {aiAnalysis.source === 'gemini' ? 'Gemini 2.5 Flash' : 'Análise Acadêmica'}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-purple-200">
+                      Extração cognitiva baseada nas manifestações discursivas da comunidade
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleRunAiAnalysis}
+                  disabled={isGeneratingAi}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition border border-white/20 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingAi ? 'animate-spin' : ''}`} />
+                  <span>Regerar</span>
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="bg-white/10 rounded-xl p-4 border border-white/10">
+                  <p className="font-semibold text-purple-200 mb-1">Resumo Executivo:</p>
+                  <p className="text-white leading-relaxed text-sm">{aiAnalysis.summary}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
+                    <p className="font-semibold text-purple-200 mb-2">Eixos Temáticos Mais Evidenciados:</p>
+                    <ul className="space-y-1 text-slate-200">
+                      {aiAnalysis.keyThemes.map((theme, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="text-amber-400 font-bold">•</span>
+                          <span>{theme}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
+                    <p className="font-semibold text-purple-200 mb-2">Recomendações para Gestão e Extensão:</p>
+                    <ul className="space-y-1 text-slate-200">
+                      {aiAnalysis.recommendations.map((rec, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {aiAnalysis.citizenSentiment && (
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-purple-300">
+                    <span className="font-semibold">Sentimento Geral Predominante:</span>
+                    <span className="text-white italic">{aiAnalysis.citizenSentiment}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Graphical Question Visualizations */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

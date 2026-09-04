@@ -7,10 +7,19 @@ import { Question, SurveyStats, SurveyResponse } from './types';
  * cabeçalho e rodapé institucionais padronizados UNITINS/UAB, métricas estatísticas descritivas completas,
  * tabelas de frequência (FA, FR %, FC %), gráficos de barras horizontais coloridos e auditoria de participantes.
  */
+export interface QualitativeAnalysisData {
+  summary: string;
+  keyThemes: string[];
+  citizenSentiment: string;
+  recommendations: string[];
+  source?: 'gemini' | 'statistical_fallback';
+}
+
 export function generatePdfReport(
   stats: SurveyStats,
   questions: Question[],
-  projectTitle: string = 'Trabalho Extensionista: Cidadania Fiscal na Prática'
+  projectTitle: string = 'Trabalho Extensionista: Cidadania Fiscal na Prática',
+  qualitativeAnalysis?: QualitativeAnalysisData
 ) {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -307,7 +316,7 @@ export function generatePdfReport(
     head: [['Indicador Amostral', 'Valor Apurado', 'Significado Metodológico']],
     body: [
       ['Tamanho Amostral Válido (N)', `${stats.totalResponses}`, 'Total de cidadãos que concluíram a pesquisa'],
-      ['Média Aritmética Etária (μ)', `${stats.averageAge} anos`, 'Média ponderada pela data exata de nascimento'],
+      ['Média Aritmética Etária (anos)', `${stats.averageAge} anos`, 'Média ponderada pela data exata de nascimento'],
       ['Mediana Amostral (Md)', medianStr, 'Ponto mediano da distribuição etária (50% superior/inferior)'],
       ['Desvio Padrão Amostral (s)', stdDevStr, 'Medida de dispersão das idades em torno da média'],
       ['Intervalo Geracional (Min - Max)', `${stats.minAge} a ${stats.maxAge} anos`, 'Amplitude etária global registrada pela pesquisa'],
@@ -623,7 +632,74 @@ export function generatePdfReport(
 
   const splitConclusao = doc.splitTextToSize(textConclusao, contentWidth);
   doc.text(splitConclusao, margin, currentY, { lineHeightFactor: 1.15 });
-  currentY += splitConclusao.length * 4.5 + 12;
+  currentY += splitConclusao.length * 4.5 + 10;
+
+  // ==========================================
+  // SÍNTESE QUALITATIVA (IA / GEMINI) SE DISPONÍVEL
+  // ==========================================
+  if (qualitativeAnalysis) {
+    checkPageBreak(55);
+    doc.setFillColor(79, 70, 229); // Indigo
+    doc.rect(margin, currentY, contentWidth, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(
+      `6. SÍNTESE QUALITATIVA E PERCEPÇÃO CIDADÃ (${
+        qualitativeAnalysis.source === 'gemini' ? 'INTELIGÊNCIA ARTIFICIAL - GEMINI 2.5' : 'ANÁLISE ESTATÍSTICA QUALITATIVA'
+      })`,
+      margin + 3,
+      currentY + 5
+    );
+
+    currentY += 11;
+    doc.setTextColor(...colorTextDark);
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Resumo Executivo da Percepção dos Cidadãos:', margin, currentY);
+    currentY += 4.5;
+
+    doc.setFont('helvetica', 'normal');
+    const splitSummary = doc.splitTextToSize(qualitativeAnalysis.summary, contentWidth);
+    doc.text(splitSummary, margin, currentY, { lineHeightFactor: 1.15 });
+    currentY += splitSummary.length * 4.2 + 5;
+
+    if (qualitativeAnalysis.keyThemes && qualitativeAnalysis.keyThemes.length > 0) {
+      checkPageBreak(30);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Eixos Temáticos Mais Evidenciados:', margin, currentY);
+      currentY += 4.5;
+      doc.setFont('helvetica', 'normal');
+      qualitativeAnalysis.keyThemes.forEach((theme) => {
+        doc.text(`• ${theme}`, margin + 4, currentY);
+        currentY += 4.2;
+      });
+      currentY += 3;
+    }
+
+    if (qualitativeAnalysis.citizenSentiment) {
+      checkPageBreak(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Sentimento Geral Predominante: `, margin, currentY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(qualitativeAnalysis.citizenSentiment, margin + 65, currentY);
+      currentY += 7;
+    }
+
+    if (qualitativeAnalysis.recommendations && qualitativeAnalysis.recommendations.length > 0) {
+      checkPageBreak(30);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Recomendações para Gestão Pública e Formação Cidadã:', margin, currentY);
+      currentY += 4.5;
+      doc.setFont('helvetica', 'normal');
+      qualitativeAnalysis.recommendations.forEach((rec) => {
+        const splitRec = doc.splitTextToSize(`• ${rec}`, contentWidth - 6);
+        doc.text(splitRec, margin + 4, currentY);
+        currentY += splitRec.length * 4.2;
+      });
+      currentY += 8;
+    }
+  }
 
   // Bloco de Assinaturas Colorido
   checkPageBreak(44.8);
@@ -658,16 +734,21 @@ export function generateScientificPdfReport(
   arg1: Question[] | SurveyStats,
   arg2?: SurveyResponse[] | Question[],
   arg3?: SurveyStats | string,
-  arg4?: string
+  arg4?: string | QualitativeAnalysisData,
+  arg5?: QualitativeAnalysisData
 ) {
   let stats: SurveyStats;
   let questions: Question[];
   let projectTitle: string = 'Trabalho Extensionista: Cidadania Fiscal na Prática';
+  let qualitativeAnalysis: QualitativeAnalysisData | undefined;
 
   if (arg1 && 'totalResponses' in arg1) {
     stats = arg1 as unknown as SurveyStats;
     questions = (arg2 as Question[]) || [];
     if (typeof arg3 === 'string') projectTitle = arg3;
+    if (arg4 && typeof arg4 === 'object' && 'summary' in arg4) {
+      qualitativeAnalysis = arg4 as QualitativeAnalysisData;
+    }
   } else {
     questions = (arg1 as Question[]) || [];
     if (arg3 && typeof arg3 === 'object' && 'totalResponses' in arg3) {
@@ -689,7 +770,9 @@ export function generateScientificPdfReport(
     }
     if (typeof arg4 === 'string') projectTitle = arg4;
     else if (typeof arg3 === 'string') projectTitle = arg3;
+    if (arg5 && typeof arg5 === 'object') qualitativeAnalysis = arg5;
+    else if (arg4 && typeof arg4 === 'object' && 'summary' in arg4) qualitativeAnalysis = arg4;
   }
 
-  return generatePdfReport(stats, questions, projectTitle);
+  return generatePdfReport(stats, questions, projectTitle, qualitativeAnalysis);
 }

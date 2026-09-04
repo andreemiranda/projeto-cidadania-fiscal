@@ -1,3 +1,25 @@
+/**
+ * DECISÃO ARQUITETURAL (OPÇÃO A): Persistência Dupla Integral (PostgreSQL + Firestore)
+ *
+ * 1. PostgreSQL (via Prisma & Server Actions):
+ *    - Atua como a FONTE DE VERDADE TRANSACIONAL para a integridade acadêmica da pesquisa da UNITINS.
+ *    - Garante unicidade através de constraints estritas no banco (userId, userEmail, browserId, ipAddress)
+ *      e validação de cookie HTTP-only em submitSurveyAction.
+ *    - Serve de base oficial para a extração de dados estatísticos, auditoria e emissão do Relatório
+ *      Científico em PDF (via fetchSurveyStatsCached), com invalidação reativa (revalidateTag('survey_stats')).
+ *
+ * 2. Google Cloud Firestore:
+ *    - Atua como camada de sincronização em tempo real e cache reativo de alta disponibilidade.
+ *    - Recebe espelhamento assíncrono após confirmação bem-sucedida no PostgreSQL, sem bloquear a UI.
+ *    - Alimenta o AdminDashboard e a aba de Relatórios em tempo real via onSnapshot.
+ *    - Em caso de falha de conexão com o Firestore após confirmação no Postgres, a inconsistência é
+ *      gravada na tabela SyncFailure do Postgres para reconciliação automática ou sob demanda ("Ressincronizar").
+ *
+ * 3. Perguntas (Opção A):
+ *    - Mantidas no Firestore para carregamento instantâneo no cliente e sincronizadas no PostgreSQL
+ *      (modelo Question no Prisma), garantindo redundância total de metadados e integridade metodológica.
+ */
+
 import {
   collection,
   doc,
@@ -6,19 +28,28 @@ import {
   deleteDoc,
   query,
   orderBy,
-  where,
-  limit,
+  onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, isConfigured } from './firebase';
 import { Question, SurveyResponse, SurveyStats } from './types';
 import { DEFAULT_QUESTIONS } from './defaultQuestions';
+import {
+  submitSurveyAction,
+  checkAlreadySubmittedAction,
+  recordSyncFailureAction,
+  fetchSurveyStatsCached,
+  saveQuestionPostgresAction,
+  deleteQuestionPostgresAction,
+  resyncFirestoreAction,
+  markSyncFailuresResolvedAction,
+} from '@/app/actions';
 
 const LOCAL_STORAGE_QUESTIONS_KEY = 'unitins_fiscal_questions_v1';
-const LOCAL_STORAGE_RESPONSES_KEY = 'unitins_fiscal_responses_v1';
+const LOCAL_STORAGE_MY_RESPONSE_KEY = 'unitins_fiscal_my_last_response';
 
 /**
- * Loads the active list of questions (Local-first for zero latency, with background Firestore sync)
+ * Loads the active list of questions (Dual-persistence Option A)
  */
 export async function getQuestionsList(): Promise<Question[]> {
   let localQuestions: Question[] = DEFAULT_QUESTIONS;
@@ -59,7 +90,7 @@ export async function getQuestionsList(): Promise<Question[]> {
 }
 
 /**
- * Saves or updates a question
+ * Saves or updates a question in both Firestore and PostgreSQL (Option A)
  */
 export async function saveQuestion(question: Question): Promise<void> {
   const currentQuestions = await getQuestionsList();
@@ -68,7 +99,14 @@ export async function saveQuestion(question: Question): Promise<void> {
     ? currentQuestions.map((q) => (q.id === question.id ? question : q))
     : [...currentQuestions, question];
 
-  // Save to Firestore if available
+  // 1. Dual persistence: Save to PostgreSQL
+  try {
+    await saveQuestionPostgresAction(question);
+  } catch (err) {
+    console.warn('Failed to persist question in Postgres:', err);
+  }
+
+  // 2. Save to Firestore if available
   if (isConfigured && db) {
     try {
       await setDoc(doc(db, 'perguntas', question.id), {
@@ -85,19 +123,27 @@ export async function saveQuestion(question: Question): Promise<void> {
     }
   }
 
-  // Always sync to localStorage
+  // 3. Local cache
   if (typeof window !== 'undefined') {
     localStorage.setItem(LOCAL_STORAGE_QUESTIONS_KEY, JSON.stringify(updated));
   }
 }
 
 /**
- * Deletes a question by ID
+ * Deletes a question by ID in both stores (Option A)
  */
 export async function deleteQuestionById(questionId: string): Promise<void> {
   const currentQuestions = await getQuestionsList();
   const updated = currentQuestions.filter((q) => q.id !== questionId);
 
+  // 1. Delete from PostgreSQL
+  try {
+    await deleteQuestionPostgresAction(questionId);
+  } catch (err) {
+    console.warn('Failed deleting question from Postgres:', err);
+  }
+
+  // 2. Delete from Firestore
   if (isConfigured && db) {
     try {
       await deleteDoc(doc(db, 'perguntas', questionId));
@@ -127,6 +173,7 @@ export async function restoreDefaultQuestions(): Promise<Question[]> {
           ...q,
           updatedAt: serverTimestamp(),
         });
+        saveQuestionPostgresAction(q).catch(() => {});
       }
     } catch (err) {
       console.warn('Error resetting Firestore questions:', err);
@@ -141,51 +188,128 @@ export async function restoreDefaultQuestions(): Promise<Question[]> {
 }
 
 /**
- * Submits a new survey response
+ * Submits a new survey response:
+ * 1. Executes PostgreSQL transaction (source of truth & constraint validation).
+ * 2. On success, asynchronously mirrors to Firestore (real-time read layer).
+ * 3. Records any Firestore sync failures in PostgreSQL for reconciliation.
  */
 export async function submitSurveyResponse(response: SurveyResponse): Promise<void> {
-  // Save to local storage IMMEDIATELY
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
-    const list: SurveyResponse[] = saved ? JSON.parse(saved) : [];
-    const updated = [response, ...list.filter((r) => r.id !== response.id)];
-    localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(updated));
+  // Step 1: Write to PostgreSQL via server action first
+  const result = await submitSurveyAction({
+    id: response.id,
+    userId: response.userId,
+    userEmail: response.userEmail,
+    userName: response.userName,
+    birthDate: response.birthDate,
+    age: response.age,
+    browserId: response.browserId,
+    answers: response.answers,
+  });
+
+  if (!result.success) {
+    throw new Error(result.error || 'Falha ao validar ou registrar a resposta no servidor.');
   }
 
-  // Await Firestore persistence securely so it is saved in the global database
-  if (isConfigured && db) {
+  // Step 2: Store only the current user's last response in localStorage (stop rewriting entire database)
+  if (typeof window !== 'undefined') {
     try {
-      await setDoc(doc(db, 'respostas', response.id), {
-        ...response,
-        serverCreatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error('Firebase sync error:', err);
-      throw new Error('Falha ao gravar no banco de dados principal. Tente novamente.');
+      localStorage.setItem(LOCAL_STORAGE_MY_RESPONSE_KEY, JSON.stringify(response));
+    } catch {
+      // ignore
     }
+  }
+
+  // Step 3: Asynchronously mirror to Firestore without blocking the UI response
+  if (isConfigured && db) {
+    const firestorePayload = {
+      ...response,
+      serverCreatedAt: serverTimestamp(),
+    };
+
+    setDoc(doc(db, 'respostas', response.id), firestorePayload).catch(async (syncErr) => {
+      console.error('Async Firestore mirror failed, registering in Postgres sync_failures:', syncErr);
+      try {
+        await recordSyncFailureAction(
+          'survey_response',
+          response.id,
+          response,
+          syncErr?.message || 'Firestore setDoc async mirror failed'
+        );
+      } catch (recordErr) {
+        console.error('Failed to log sync failure in Postgres:', recordErr);
+      }
+    });
   }
 }
 
 /**
- * Retrieves all survey responses (Firestore first to ensure global count, with fallback to local)
+ * Checks if a user (by Google email) or a device (by browserId) has already submitted a response.
+ * Uses a single fast indexed query in PostgreSQL via checkAlreadySubmittedAction.
  */
-export async function getAllResponses(): Promise<SurveyResponse[]> {
-  let localResponses: SurveyResponse[] = [];
+export async function checkUserOrBrowserAlreadySubmitted(
+  email: string,
+  browserId: string
+): Promise<{
+  alreadySubmitted: boolean;
+  byEmail: boolean;
+  byBrowser: boolean;
+  existingResponse: SurveyResponse | null;
+}> {
+  try {
+    // Single indexed query to PostgreSQL (WHERE userEmail = $1 OR browserId = $2 LIMIT 1)
+    const result = await checkAlreadySubmittedAction(email, browserId);
+    if (result.alreadySubmitted) {
+      return result;
+    }
+  } catch (err) {
+    console.warn('PostgreSQL check query encountered error, checking local/Firestore backup:', err);
+  }
+
+  // Backup check in local storage for current user's prior response
   if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          localResponses = parsed;
+    try {
+      const mySaved = localStorage.getItem(LOCAL_STORAGE_MY_RESPONSE_KEY);
+      if (mySaved) {
+        const parsed: SurveyResponse = JSON.parse(mySaved);
+        const matchEmail = email && parsed.userEmail.toLowerCase() === email.toLowerCase().trim();
+        const matchBrowser = browserId && parsed.browserId === browserId;
+        if (matchEmail || matchBrowser) {
+          return {
+            alreadySubmitted: true,
+            byEmail: Boolean(matchEmail),
+            byBrowser: Boolean(matchBrowser),
+            existingResponse: parsed,
+          };
         }
-      } catch {
-        // ignore
       }
+    } catch {
+      // ignore
     }
   }
 
-  // Await Firestore to fetch all responses so the PDF and Dashboard are always up to date
+  return {
+    alreadySubmitted: false,
+    byEmail: false,
+    byBrowser: false,
+    existingResponse: null,
+  };
+}
+
+/**
+ * Retrieves all survey responses from PostgreSQL via fetchSurveyStatsCached
+ * for official stats and scientific PDF reports.
+ */
+export async function getAllResponses(): Promise<SurveyResponse[]> {
+  try {
+    const responses = await fetchSurveyStatsCached();
+    if (responses && responses.length > 0) {
+      return responses;
+    }
+  } catch (err) {
+    console.warn('Could not fetch cached responses from Postgres, checking Firestore:', err);
+  }
+
+  // Fallback to Firestore
   if (isConfigured && db) {
     try {
       const rSnap = await getDocs(query(collection(db, 'respostas'), orderBy('createdAt', 'desc')));
@@ -194,21 +318,118 @@ export async function getAllResponses(): Promise<SurveyResponse[]> {
         rSnap.forEach((docSnap) => {
           list.push(docSnap.data() as SurveyResponse);
         });
-        if (typeof window !== 'undefined' && list.length > 0) {
-          localStorage.setItem(LOCAL_STORAGE_RESPONSES_KEY, JSON.stringify(list));
-        }
-        return list; // Return fresh data directly from Firestore
+        return list;
       }
     } catch (err) {
-      console.warn('Error fetching Firestore responses, falling back to local storage:', err);
+      console.warn('Firestore fallback fetch failed:', err);
     }
   }
 
-  return localResponses;
+  // Fallback to current user's local response
+  if (typeof window !== 'undefined') {
+    const mySaved = localStorage.getItem(LOCAL_STORAGE_MY_RESPONSE_KEY);
+    if (mySaved) {
+      try {
+        return [JSON.parse(mySaved)];
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return [];
 }
 
 /**
- * Clears all responses so the form is ready for a fresh new survey run
+ * Subscribes to real-time response changes via Firestore onSnapshot
+ * for the live Admin Dashboard.
+ */
+export function subscribeToResponses(
+  onUpdate: (responses: SurveyResponse[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!isConfigured || !db) {
+    // If Firebase is not configured, fetch once from Postgres and return no-op unsubscriber
+    getAllResponses().then(onUpdate).catch(() => {});
+    return () => {};
+  }
+
+  const q = query(collection(db, 'respostas'), orderBy('createdAt', 'desc'));
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const list: SurveyResponse[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as SurveyResponse);
+      });
+      onUpdate(list);
+    },
+    (err) => {
+      console.warn('Firestore real-time subscription error, falling back to cached fetch:', err);
+      if (onError) onError(err);
+      getAllResponses().then(onUpdate).catch(() => {});
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
+ * Reconciles PostgreSQL responses to Firestore (triggered by admin "Ressincronizar" button)
+ */
+export async function resyncPostgresToFirestore(): Promise<{
+  success: boolean;
+  syncedCount: number;
+  message: string;
+}> {
+  try {
+    const res = await resyncFirestoreAction();
+    if (!res.success || !res.records) {
+      return { success: false, syncedCount: 0, message: 'Falha ao buscar registros do PostgreSQL.' };
+    }
+
+    if (!isConfigured || !db) {
+      return {
+        success: false,
+        syncedCount: 0,
+        message: 'Firestore não configurado para espelhamento.',
+      };
+    }
+
+    const resolvedIds: string[] = [];
+    let synced = 0;
+
+    for (const record of res.records) {
+      await setDoc(doc(db, 'respostas', record.id), {
+        ...record,
+        serverCreatedAt: serverTimestamp(),
+      });
+      resolvedIds.push(record.id);
+      synced++;
+    }
+
+    if (resolvedIds.length > 0) {
+      await markSyncFailuresResolvedAction(resolvedIds);
+    }
+
+    return {
+      success: true,
+      syncedCount: synced,
+      message: `${synced} respostas verificadas e reconciliadas com sucesso no Firestore.`,
+    };
+  } catch (err: any) {
+    console.error('resyncPostgresToFirestore error:', err);
+    return {
+      success: false,
+      syncedCount: 0,
+      message: `Erro durante ressincronização: ${err?.message || 'Falha desconhecida'}`,
+    };
+  }
+}
+
+/**
+ * Clears responses across both layers (Administrator maintenance action)
  */
 export async function resetAllResponses(): Promise<void> {
   if (isConfigured && db) {
@@ -224,104 +445,8 @@ export async function resetAllResponses(): Promise<void> {
   }
 
   if (typeof window !== 'undefined') {
-    localStorage.removeItem(LOCAL_STORAGE_RESPONSES_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_MY_RESPONSE_KEY);
   }
-}
-
-/**
- * Checks if a user (by Google email) or a device (by browserId) has already submitted a response.
- * Enforces single-respondent integrity for academic research.
- */
-export async function checkUserOrBrowserAlreadySubmitted(
-  email: string,
-  browserId: string
-): Promise<{
-  alreadySubmitted: boolean;
-  byEmail: boolean;
-  byBrowser: boolean;
-  existingResponse: SurveyResponse | null;
-}> {
-  if (isConfigured && db) {
-    try {
-      let foundEmail = false;
-      let foundBrowser = false;
-      let existingResponse = null;
-
-      if (email) {
-        const qEmail = query(
-          collection(db, 'respostas'),
-          where('userEmail', '==', email),
-          limit(1)
-        );
-        const snapEmail = await getDocs(qEmail);
-        if (!snapEmail.empty) {
-          foundEmail = true;
-          existingResponse = snapEmail.docs[0].data() as SurveyResponse;
-        }
-      }
-
-      if (!foundEmail && browserId) {
-        const qBrowser = query(
-          collection(db, 'respostas'),
-          where('browserId', '==', browserId),
-          limit(1)
-        );
-        const snapBrowser = await getDocs(qBrowser);
-        if (!snapBrowser.empty) {
-          foundBrowser = true;
-          existingResponse = snapBrowser.docs[0].data() as SurveyResponse;
-        }
-      }
-
-      if (foundEmail || foundBrowser) {
-        return {
-          alreadySubmitted: true,
-          byEmail: foundEmail,
-          byBrowser: foundBrowser,
-          existingResponse,
-        };
-      }
-      
-      // If not found in DB, return false immediately to load fast!
-      return {
-        alreadySubmitted: false,
-        byEmail: false,
-        byBrowser: false,
-        existingResponse: null,
-      };
-    } catch (err) {
-      console.warn('Fast query failed, falling back to local storage', err);
-    }
-  }
-
-  // Fallback to local storage (fast but not cross-device)
-  let localResponses: SurveyResponse[] = [];
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(LOCAL_STORAGE_RESPONSES_KEY);
-    if (saved) {
-      try {
-        localResponses = JSON.parse(saved);
-      } catch {}
-    }
-  }
-
-  const foundByEmail = localResponses.find(
-    (r) => r.userEmail && r.userEmail.toLowerCase().trim() === email.toLowerCase().trim()
-  );
-
-  const foundByBrowser = browserId
-    ? localResponses.find((r) => r.browserId && r.browserId === browserId)
-    : undefined;
-
-  const alreadySubmitted = Boolean(foundByEmail || foundByBrowser);
-  const existingResponse = foundByEmail || foundByBrowser || null;
-
-  return {
-    alreadySubmitted,
-    byEmail: Boolean(foundByEmail),
-    byBrowser: Boolean(foundByBrowser),
-    existingResponse,
-  };
 }
 
 /**

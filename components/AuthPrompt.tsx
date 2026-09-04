@@ -53,6 +53,39 @@ export default function AuthPrompt() {
         </button>
       </div>
 
+      {/* Demo / Homologation Access - Only active in development or when explicitly enabled */}
+      {(process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true') && (
+        <div className="mt-8 pt-6 border-t border-dashed border-amber-300 bg-amber-50/70 -mx-6 sm:-mx-10 px-6 sm:px-10 pb-6 rounded-b-xl text-left">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+            <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+              Acesso Rápido de Teste (Ambiente de Homologação)
+            </span>
+          </div>
+          <p className="text-xs text-amber-800 mb-4 font-medium">
+            Estes botões permitem simular preenchimentos ou inspecionar o painel administrativo sem necessidade de popup Google. Não são exibidos em produção oficial.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              type="button"
+              onClick={() => loginAsDemoUser()}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 hover:border-slate-400 px-4 py-2 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+              <span>Entrar como Usuário de Teste</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => loginAsDemoAdmin()}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Entrar como Administrador de Teste</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-black font-semibold">
         <ShieldCheck className="w-4 h-4 text-emerald-600" />
         <span>Ambiente seguro • Amostragem protegida por protocolo de usuário e dispositivo único</span>

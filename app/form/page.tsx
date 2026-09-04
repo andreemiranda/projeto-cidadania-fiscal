@@ -1,14 +1,14 @@
 'use client';
 
 import React from 'react';
-import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { useAuth } from '@/lib/AuthContext';
 import HeaderBanner from '@/components/HeaderBanner';
 import AuthPrompt from '@/components/AuthPrompt';
 import FiscalForm from '@/components/FiscalForm';
 import { GraduationCap } from 'lucide-react';
 import Link from 'next/link';
 
-function FormContent() {
+export default function FormPage() {
   const { user, loading } = useAuth();
 
   return (
@@ -55,10 +55,3 @@ function FormContent() {
   );
 }
 
-export default function FormPage() {
-  return (
-    <AuthProvider>
-      <FormContent />
-    </AuthProvider>
-  );
-}

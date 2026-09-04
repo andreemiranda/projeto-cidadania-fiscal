@@ -34,15 +34,24 @@ if (
       auth = getAuth(app);
       db = getFirestore(app);
       
-      // Enable robust offline persistence for instant form submissions
+      // Enable offline persistence non-blockingly during idle time to prevent initial render lag
       if (typeof window !== 'undefined') {
-        enableIndexedDbPersistence(db).catch((err) => {
-          if (err.code == 'failed-precondition') {
-            console.warn('Multiple tabs open, persistence disabled in this tab.');
-          } else if (err.code == 'unimplemented') {
-            console.warn('Browser does not support Firestore persistence.');
-          }
-        });
+        const initPersistence = () => {
+          if (!db) return;
+          enableIndexedDbPersistence(db).catch((err) => {
+            if (err.code === 'failed-precondition') {
+              console.warn('Multiple tabs open, Firestore persistence disabled in this tab.');
+            } else if (err.code === 'unimplemented') {
+              console.warn('Browser does not support Firestore persistence.');
+            }
+          });
+        };
+
+        if ('requestIdleCallback' in window) {
+          (window as any).requestIdleCallback(initPersistence);
+        } else {
+          setTimeout(initPersistence, 1500);
+        }
       }
 
       isConfigured = true;

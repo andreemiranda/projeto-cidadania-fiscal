@@ -1,14 +1,14 @@
 'use client';
 
 import React from 'react';
-import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { useAuth } from '@/lib/AuthContext';
 import HeaderBanner from '@/components/HeaderBanner';
 import ProjectCover from '@/components/ProjectCover';
 import { ShieldCheck, GraduationCap, FileText, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-function MainContent() {
+export default function HomePage() {
   const { user, isAdmin, loginWithGoogle, loading } = useAuth();
   const router = useRouter();
 
@@ -91,13 +91,5 @@ function MainContent() {
         </div>
       </footer>
     </div>
-  );
-}
-
-export default function HomePage() {
-  return (
-    <AuthProvider>
-      <MainContent />
-    </AuthProvider>
   );
 }

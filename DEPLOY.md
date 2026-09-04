@@ -1,24 +1,34 @@
 # Guia de Implantação (Deploy) – UNITINS Cidadania Fiscal
 
-Este projeto está 100% preparado e homologado para implantação em produção no **Render** e no **Cloudflare Pages / Workers**.
+Este projeto está 100% preparado e homologado para implantação em produção no **Render** (com PostgreSQL gerenciado) e no **Cloudflare Pages / Vercel**.
 
 ---
 
-## 1. Implantação no Render (Web Service)
+## 1. Arquitetura de Persistência Dupla (PostgreSQL + Firestore)
 
-O Render executará a aplicação como um serviço web Node.js completo via `npm run build` e `npm run start`.
+- **PostgreSQL (via Prisma)**: Atua como fonte de verdade transacional, garantindo as restrições estritas de unicidade (`userId`, `userEmail`, `browserId`, `ipAddress`) e auditoria acadêmica.
+- **Google Cloud Firestore**: Atua como camada de espelhamento assíncrono em tempo real, alimentando os dashboards administrativos via `onSnapshot` sem necessidade de recarregar a página.
+- **Tabela de Reconciliação (`SyncFailure`)**: Caso o espelhamento no Firestore oscile após o voto ser computado no Postgres, a falha é registrada e pode ser resolvida pelo botão **Ressincronizar Firestore** no painel administrativo.
+- **Análise Qualitativa com Gemini 2.5 Flash**: Síntese automática de respostas dissertativas no servidor via `@google/genai` e incorporação no relatório científico em PDF.
+
+---
+
+## 2. Implantação no Render (com Blueprint automático)
+
+O Render executará a aplicação como um serviço web Node.js completo acoplado a um banco PostgreSQL via `render.yaml`.
 
 ### Passos:
 1. Conecte seu repositório GitHub ao painel do [Render](https://dashboard.render.com/).
-2. Clique em **New +** e selecione **Web Service** (ou utilize o arquivo `render.yaml` via Blueprint).
-3. Defina as seguintes configurações:
-   - **Environment**: `Node`
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm run start`
-   - **Node Version**: `20` ou superior.
-4. Adicione as Variáveis de Ambiente no painel do Render (**Environment Variables**):
-   - `NODE_ENV`: `production`
+2. Clique em **New +** e selecione **Blueprint**.
+3. Selecione o repositório deste projeto (`render.yaml` configurado).
+4. O Render provisionará automaticamente:
+   - Banco de Dados PostgreSQL (`unitins-fiscal-db`)
+   - Web Service Next.js 15
+5. Configure as Variáveis de Ambiente no painel do Render (**Environment Variables**):
+   - `DATABASE_URL`: *(gerenciada automaticamente pelo Blueprint)*
+   - `GEMINI_API_KEY`: *(sua chave da API Google Gemini para análise qualitativa)*
    - `NEXT_PUBLIC_ADMIN_EMAILS`: `suporte.camarapa@gmail.com`
+   - `NEXT_PUBLIC_ENABLE_DEMO_LOGIN`: `false` *(em produção oficial)*
    - `NEXT_PUBLIC_FIREBASE_API_KEY`: *(sua chave do Firebase)*
    - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`: *(seu auth domain do Firebase)*
    - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`: *(seu project id do Firebase)*
@@ -27,33 +37,26 @@ O Render executará a aplicação como um serviço web Node.js completo via `npm
    - `NEXT_PUBLIC_FIREBASE_APP_ID`: *(seu app id)*
    - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`: *(seu measurement id)*
 
----
-
-## 2. Implantação no Cloudflare Pages / Worker
-
-O projeto possui compatibilidade com Cloudflare Pages com flags `nodejs_compat`.
-
-### Passos via Painel do Cloudflare Pages:
-1. Acesse o [Cloudflare Dashboard](https://dash.cloudflare.com/) > **Workers & Pages** > **Create application** > **Pages** > **Connect to Git**.
-2. Selecione o repositório do projeto.
-3. Configure os parâmetros de build:
-   - **Framework preset**: `Next.js`
-   - **Build command**: `npm run build`
-   - **Build output directory**: `.next`
-4. Em **Environment variables**, insira as variáveis idênticas listadas no passo do Render.
-5. Em **Compatibility Flags**, certifique-se de ativar: `nodejs_compat`.
-6. Clique em **Save and Deploy**.
-
-### Passos via CLI (Wrangler):
+### Migração do Banco:
+O script `postinstall` no `package.json` gera o cliente Prisma automaticamente. Para aplicar o schema no banco PostgreSQL:
 ```bash
-npm install -g wrangler
-npx wrangler pages deploy .next
+npx prisma db push
 ```
+
 ---
 
-## 3. Segurança e Auditoria Integrada
-- **Unicidade por Conta Google**: Bloqueia respostas duplicadas pelo mesmo e-mail Google.
-- **Unicidade por Dispositivo (Browser ID)**: Identifica e bloqueia múltiplas respostas a partir do mesmo dispositivo físico.
-- **Validação de Maioridade**: Impede preenchimento de menores de 18 anos.
-- **Acesso Restrito às Configurações**: Restrito a contas registradas como administradoras (`suporte.camarapa@gmail.com`).
-- **Relatório PDF Científico**: Emissão de relatório técnico completo no padrão ABNT com gráficos e lista nominal de participantes.
+## 3. Implantação no Cloudflare Pages / Vercel
+
+1. Importe o repositório na plataforma.
+2. Defina `DATABASE_URL` apontando para o seu banco PostgreSQL (Supabase, Neon, RDS ou Render).
+3. Configure `GEMINI_API_KEY` para síntese qualitativa inteligente.
+4. Execute `npm run build`.
+
+---
+
+## 4. Segurança e Integridade Acadêmica
+- **Unicidade Tripla**: Bloqueio de respostas duplicadas por conta Google, Browser ID e IP.
+- **Cookie HTTP-Only**: Previne submissões múltiplas na mesma sessão do navegador.
+- **Validação de Maioridade**: Bloqueia respostas de menores de 18 anos.
+- **Acesso Administrativo Restrito**: Apenas contas autorizadas em `NEXT_PUBLIC_ADMIN_EMAILS`.
+- **Relatório PDF Científico**: Formatação institucional UNITINS/UAB com gráficos estatísticos e síntese qualitativa por IA.

@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  userEmail String   @unique
+  userName  String?
+  birthDate String?
+  age       Int
+  browserId String   @unique
+  ipAddress String?  @unique
+  answers   Json
+  createdAt DateTime @default(now())
+
+  @@index([userEmail])
+  @@index([browserId])
+}
+
+model Question {
+  id          String   @id
+  title       String
+  type        String
+  options     Json?
+  required    Boolean  @default(true)
+  order       Int      @default(0)
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model SyncFailure {
+  id         String   @id @default(cuid())
+  entityType String   // "survey_response" | "question"
+  entityId   String
+  payload    Json
+  error      String?
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
