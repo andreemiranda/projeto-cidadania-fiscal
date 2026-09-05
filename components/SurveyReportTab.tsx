@@ -265,7 +265,7 @@ export default function SurveyReportTab() {
                             tick={{ fontSize: 11, fill: '#334155' }}
                           />
                           <Tooltip
-                            formatter={(value: any) => [`${value ?? 0} respostas`, 'Frequência']}
+                            formatter={((value: any) => [`${value ?? 0} respostas`, 'Frequência']) as any}
                           />
                           <Bar dataKey="votos" radius={[0, 4, 4, 0]}>
                             {chartData.map((entry, index) => (
